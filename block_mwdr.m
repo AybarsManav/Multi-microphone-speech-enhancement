@@ -61,10 +61,15 @@ for m = 1:M % Obtain received signals at each microphone
     end
     
     % Signal component
-    clean_signal = s1;                                              % Clean signal
+    clean_signal = s2;                                              % Clean signal
     room_response = squeeze(hs{5}(m, :));                           % Room response for current micrphone and signal source
     signal_comp = conv(clean_signal, room_response, "same");        % Convolve with the room response
     x(:,m) = x(:, m) + signal_comp;                                 % Mic signal
+
+    clean_signal = s1;                                              % Clean signal
+    room_response = squeeze(hs{4}(m, :));                           % Room response for current micrphone and signal source
+    signal_comp = conv(clean_signal, room_response, "same");        % Convolve with the room response
+    x(:,m) = x(:, m) + signal_comp;                
 end
        
 % p = play_scaled_sound(x(:, 1), fs); % Uncomment if you want to listen to the received signal at the first microphone
@@ -126,23 +131,41 @@ end
 %% Obtain RTF (Ground truth)
 A_s = zeros(K, M);
 for m = 1:M
-    A_m = fftshift(fft(hs{5}(m, :), K)); 
+    A_m = fftshift(fft(hs{1}(m, :), K)); 
     A_s(:, m) = A_m;                 
 end
 A_s = A_s ./ A_s(:, 1);
 
 %% Estimate RTF
-A_hats = zeros(K, M);                   % Estimated RTF per frequency band
+A_hats = zeros(K, M, 2);                   % Estimated RTF per frequency band
 R_s_hats = zeros(K, M, M);              % Estimated Rs per frequency band
 for k = 1:K
     R_x_k = squeeze(R_x(k, :, :));
-    R_n_k = squeeze(R_n(k, :, :));
+    R_n_k = squeeze(R_n_cheat(k, :, :));
     [U, D] = gevd(R_x_k, R_n_k);        % Generalized eigenvalue decomp, colums of U are the right eigenvectors
     Q = inv(U)';
-    A_hats(k, :) = Q(:, 1) / Q(1, 1);   % Normalize with the first element
-    R_s_hats(k, :, :) = Q(:, 1) * (D(1, 1) - 1) * Q(:, 1)';
+    A_hats(k, :, :) = Q(:, 1:2) ./ Q(1, 1:2);   % Normalize with the first element
+    R_s_hats(k, :, :) = Q(:, 1:2) * (D(1:2, 1:2) - 1) * Q(:, 1:2)';
 end
 
+%%
+for k = 1:K
+    Rxk = squeeze(R_x(k,:,:));   % (M x M)
+    ak = squeeze(A_hats(k,:, :));          % (M x 1)
+
+    % MVDR weights
+    w_mvdr = inv(Rxk) * ak * inv(ak' *inv(Rxk) * ak);  % (M x 1)
+
+    for l = 1:L
+        x_k = squeeze(X(k,l,:));            % (M x 1)
+        S_hat(k,l, :) = w_mvdr' * x_k;         % scalar
+    end
+end
+
+y1 = istft(S_hat(:, :, 1), fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
+y2 = istft(S_hat(:, :, 2), fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
+audiowrite('enhanced_mvdr_src1_.wav', normalize(y1(50:end-50), 'range', [-1, 1]), fs);
+audiowrite('enhanced_mvdr_src2_.wav', normalize(y2(50:end-50), 'range', [-1, 1]), fs);
 
 %% MVDR
 S_hat = mvdr_beamformer(X, R_n, A_hats);
@@ -160,8 +183,7 @@ subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced
 S_hat = mvdr_beamformer(X, R_n, A_hats);
 S_hat = single_channel_wiener(R_n, A_hats, R_s_hats, S_hat);
 y = istft(S_hat, fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
-
-% Results
+Results
 p = play_scaled_sound(y, fs);
 audiowrite('enhanced_wiener.wav', normalize(y, 'range', [-1, 1]), fs);
 figure;
@@ -172,7 +194,7 @@ subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced
 %% MVDR - using Rx
 for k = 1:K
     Rxk = squeeze(R_x(k,:,:));
-    ak = A_hats(k,:).'; 
+    ak = A_s(k,:).'; 
     
     % MVDR weights
     w_mvdr = (Rxk \ ak) / (ak' / Rxk * ak); 
