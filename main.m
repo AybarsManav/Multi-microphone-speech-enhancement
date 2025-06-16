@@ -5,9 +5,9 @@ close all
 
 [s1, fs] = audioread('clean_speech.wav');                   % Source 1
 [s2, ~]  = audioread('clean_speech_2.wav');                 % Source 2
-[n1, ~]  = audioread('aritificial_nonstat_noise.wav');      % Artificial non-stationary noise
-[n2, ~]  = audioread('babble_noise.wav');                   % Babble noise
-[n3, ~]  = audioread('Speech_shaped_noise.wav');            % Speech shaped noise
+[n1, ~]  = audioread('babble_noise.wav');                   % Babble noise
+[n2, ~]  = audioread('Speech_shaped_noise.wav');            % Speech shaped noise
+[n3, ~]  = audioread('aritificial_nonstat_noise.wav');      % Artificial non-stationary noise
 load('impulse_responses.mat');                              % 5 impulses for 4 microphone each
 hs = {h_inter1, h_inter2, h_inter3, h_inter4, h_target};
 
@@ -40,7 +40,7 @@ N = min([length(s1), length(s2), length(n1), length(n2), length(n3)]);      % Nu
 s1 = s1(1:N); s2 = s2(1:N);                                                 % Clip source signals
 n1 = n1(1:N); n2 = n2(1:N); n3 = n3(1:N);                                   % Clip noise signals
 
-%% Obtain Received Signals at Microphones
+% Obtain Received Signals at Microphones
 % Here we choose a target signal and the remaining (possibly except clean signal 2) signals as interferers.
 M = 4;                                                              % Number of microphones                                          
 x = zeros(N, M);                                                    % Received signals
@@ -137,9 +137,8 @@ R_s_hats = zeros(K, M, M);              % Estimated Rs per frequency band
 for k = 1:K
     R_x_k = squeeze(R_x(k, :, :));
     R_n_k = squeeze(R_n(k, :, :));
-    [U, D] = gevd(R_x_k, R_n_k);        % Generalized eigenvalue decomp, colums of U are the right eigenvectors
-    Q = inv(U)';
-    A_hats(k, :) = Q(:, 1) / Q(1, 1);   % Normalize with the first element
+    [U, D, Q] = gevd(R_x_k, R_n_k);        % Generalized eigenvalue decomp, colums of U are the right eigenvectors
+    A_hats(k, :) = Q(:, 1) / Q(1, 1);      % Normalize with the first element
     R_s_hats(k, :, :) = Q(:, 1) * (D(1, 1) - 1) * Q(:, 1)';
 end
 
@@ -155,7 +154,7 @@ figure;
 subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
 subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
 subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
-
+score = stoi(y, signal_comp(1:length(y)), fs)
 %% Multi Channel Wiener
 S_hat = mvdr_beamformer(X, R_n, A_hats);
 S_hat = single_channel_wiener(R_n, A_hats, R_s_hats, S_hat);
