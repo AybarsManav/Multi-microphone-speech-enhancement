@@ -16,7 +16,7 @@ hs = {h_inter1, h_inter2, h_inter3, h_inter4, h_target};
 
 % Generate signals
 M = size(hs{1}, 1);                                         % Number of microphones
-SNR_db = 0;                                                 % Desired SNR levels
+desired_SNR_db = -50;                                  % Desired SNR levels (dB)
 % STFT parameters
 stft_params.win_len = 512;                                  % Corresponds to 32ms (can be considered stationary)                                                   
 stft_params.overlap = stft_params.win_len / 2;              % 50% overlap
@@ -24,7 +24,11 @@ stft_params.nfft = 512;                                     % 512 point fft
 stft_params.win = sqrt(hann(stft_params.win_len, 'periodic'));  % To avoid edge artifacts
 % Noise covariance estimation 
 silent_duration = 0.45;                                     % Consider first 0.45 seconds as silent period
+stoi_scores = zeros(size(desired_SNR_db));
 
+for index = 1:length(desired_SNR_db)
+
+SNR_db = desired_SNR_db(index);                             % Current SNR level
 
 [x, x_signal_only, x_noise_only_scaled, N] = generate_data(s1, s2, n1, n2, n3, hs, SNR_db, stft_params);
 
@@ -43,7 +47,7 @@ silent_duration = 0.45;                                     % Consider first 0.4
 R_n = estimate_noise_covariance(X, fs, stft_params, silent_duration);
 
 % Estimate Noise Spatial Covariance Cheating
-R_n_cheat = estimate_noise_covariance_cheat(X_noise_only_scaled);
+% R_n_cheat = estimate_noise_covariance_cheat(X_noise_only_scaled);
 
 % Estimate Received Signal Spatial Covariance Assuming Stationarity in a Band
 R_x = estimate_signal_covariance(X);
@@ -55,34 +59,36 @@ A_ground_truth = compute_rtf_ground_truth(hs, K);
 [A_s, R_s] = estimate_rtf_gevd(R_x, R_n);
 
 
-%% MVDR
+% MVDR
 S_hat = mvdr_beamformer(X, R_n, A_s);
 y = istft(S_hat, fs, 'Window', stft_params.win, 'OverlapLength', ...
     stft_params.overlap, 'FFTLength', stft_params.nfft, ...
     'ConjugateSymmetric', true);
 
 % Results
-p = play_scaled_sound(y, fs);
-audiowrite('enhanced_mvdr.wav', normalize(y, 'range', [-1, 1]), fs);
-figure;
-% subplot(3,1,1); spectrogram(x_signal_only(:, 1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Clean speech');
-% subplot(3,1,2); spectrogram(x(:,1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Noisy Mic 1');
-% subplot(3,1,3); spectrogram(y, stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Enhanced output');
-score = stoi(y, x_signal_only(:, 1), fs)
-
-
-%% Multi Channel Wiener
-% S_hat = mvdr_beamformer(X, R_n, A_s);
-% S_hat = single_channel_wiener(R_n, A_s, R_s, S_hat);
-% y = istft(S_hat, fs, 'Window', stft_params.win, 'OverlapLength', ...
-%     stft_params.overlap, 'FFTLength', stft_params.nfft, ...
-%     'ConjugateSymmetric', true);
-% 
-% % Results
 % p = play_scaled_sound(y, fs);
-% audiowrite('enhanced_wiener.wav', normalize(y, 'range', [-1, 1]), fs);
+% audiowrite('enhanced_mvdr.wav', normalize(y, 'range', [-1, 1]), fs);
 % figure;
 % subplot(3,1,1); spectrogram(x_signal_only(:, 1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Clean speech');
 % subplot(3,1,2); spectrogram(x(:,1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Noisy Mic 1');
 % subplot(3,1,3); spectrogram(y, stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Enhanced output');
-% score = stoi(y, x_signal_only(:, 1), fs)
+stoi_scores(index) = stoi(y, x_signal_only(:, 1), fs);
+end
+
+%% Multi Channel Wiener Cheating
+S_hat = mvdr_beamformer(X, R_n, A_s);
+R_s_cheat = estimate_signal_covariance_cheat(X_signal_only, A_s);
+S_hat = single_channel_wiener(R_n, A_s, R_s_cheat, S_hat);
+y = istft(S_hat, fs, 'Window', stft_params.win, 'OverlapLength', ...
+    stft_params.overlap, 'FFTLength', stft_params.nfft, ...
+    'ConjugateSymmetric', true);
+
+% Results
+p = play_scaled_sound(y, fs);
+audiowrite('enhanced_wiener.wav', normalize(y, 'range', [-1, 1]), fs);
+figure;
+subplot(3,1,1); spectrogram(x_signal_only(:, 1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Clean speech');
+subplot(3,1,2); spectrogram(x(:,1), stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Noisy Mic 1');
+subplot(3,1,3); spectrogram(y, stft_params.win, stft_params.overlap, stft_params.nfft, fs, 'yaxis'); title('Enhanced output');
+score = stoi(y, x_signal_only(:, 1), fs)
+
