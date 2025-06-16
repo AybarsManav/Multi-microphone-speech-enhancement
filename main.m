@@ -167,7 +167,7 @@ figure;
 subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
 subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
 subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
-
+score = stoi(y, signal_comp(1:length(y)), fs)
 %% MVDR - using Rx
 for k = 1:K
     Rxk = squeeze(R_x(k,:,:));
@@ -190,3 +190,4 @@ figure;
 subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
 subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
 subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
+score = stoi(y, signal_comp(1:length(y)), fs)
