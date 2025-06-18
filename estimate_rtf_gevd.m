@@ -25,6 +25,9 @@ function [A_hats, R_s_hats] = estimate_rtf_gevd(R_x, R_n)
 
         % Estimate signal covariance matrix
         lambda_1 = D(1, 1);
-        R_s_hats(k, :, :) = Q(:, 1) * (lambda_1 - 1) * Q(:, 1)';
+        R_s_hats(k, :, :) = (lambda_1 - 1) * Q(:, 1) * Q(:, 1)' / ...
+            (Q(:, 1)' / R_n_k * Q(:, 1));
+
+
     end
 end

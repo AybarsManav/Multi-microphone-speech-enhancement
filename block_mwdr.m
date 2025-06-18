@@ -3,37 +3,14 @@ clc
 clear all
 close all
 
-[s1, fs] = audioread('clean_speech.wav');                   % Source 1
-[s2, ~]  = audioread('clean_speech_2.wav');                 % Source 2
-[n1, ~]  = audioread('aritificial_nonstat_noise.wav');      % Artificial non-stationary noise
-[n2, ~]  = audioread('babble_noise.wav');                   % Babble noise
-[n3, ~]  = audioread('Speech_shaped_noise.wav');            % Speech shaped noise
-load('impulse_responses.mat');                              % 5 impulses for 4 microphone each
+[s1, fs] = audioread('inputs/clean_speech.wav');                   % Source 1
+[s2, ~]  = audioread('inputs/clean_speech_2.wav');                 % Source 2
+[n2, ~]  = audioread('inputs/babble_noise.wav');                   % Babble noise
+[n3, ~]  = audioread('inputs/Speech_shaped_noise.wav');            % Speech shaped noise
+[n1, ~]  = audioread('inputs/aritificial_nonstat_noise.wav');      % Artificial non-stationary noise
+load('inputs/impulse_responses.mat');                              % 5 impulses for 4 microphone each
 hs = {h_inter1, h_inter2, h_inter3, h_inter4, h_target};
 
-%% Visualize Room Responses
-t = 1:length(h_inter1(1, :)); t = t / fs;
-ymin = inf;
-ymax = -inf;
-for i = 1:5
-    for j = 1:4
-        data = hs{i}(j, :);
-        ymin = min(ymin, min(data));
-        ymax = max(ymax, max(data));
-    end
-end
-
-figure;
-for i = 1:5  % Room responses (rows)
-    for j = 1:4  % Microphones (columns)
-        idx = (i - 1) * 4 + j;  % Convert (i,j) to subplot index
-        subplot(5, 4, idx);
-        plot(t, hs{i}(j, :));  % Replace with appropriate plotting code
-        title(sprintf('Room %d - Mic %d', i, j));
-        xlabel('Time (s)');
-        ylabel('Amplitude');
-    end
-end
 
 %% Clip signals
 N = min([length(s1), length(s2), length(n1), length(n2), length(n3)]);      % Number of samples for each signal
@@ -86,11 +63,11 @@ for m = 1:M
     [X_noise_only(:,:,m), ~, ~] = stft(x_noise_only(:,m), fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft);
 end
 [K, L] = size(X(:,:,1));  % frequency bins x time frames
-plot_spectrograms(X, t, f);
+% plot_spectrograms(X, t, f);
 %% Check clean signal's representation at mic4 to determine silent period
-figure;
-spectrogram(signal_comp, win, overlap, nfft, fs, 'yaxis');
-impixelinfo();
+% figure;
+% spectrogram(signal_comp, win, overlap, nfft, fs, 'yaxis');
+% impixelinfo();
 
 %% Estimate Noise Spatial Covariance Assuming Ergodicity
 R_n = zeros(K, M, M);
@@ -142,8 +119,7 @@ R_s_hats = zeros(K, M, M);              % Estimated Rs per frequency band
 for k = 1:K
     R_x_k = squeeze(R_x(k, :, :));
     R_n_k = squeeze(R_n_cheat(k, :, :));
-    [U, D] = gevd(R_x_k, R_n_k);        % Generalized eigenvalue decomp, colums of U are the right eigenvectors
-    Q = inv(U)';
+    [U, D, Q] = gevd(R_x_k, R_n_k);        % Generalized eigenvalue decomp, colums of U are the right eigenvectors
     A_hats(k, :, :) = Q(:, 1:2) ./ Q(1, 1:2);   % Normalize with the first element
     R_s_hats(k, :, :) = Q(:, 1:2) * (D(1:2, 1:2) - 1) * Q(:, 1:2)';
 end
@@ -167,49 +143,3 @@ y2 = istft(S_hat(:, :, 2), fs, 'Window', win, 'OverlapLength', overlap, 'FFTLeng
 audiowrite('enhanced_mvdr_src1_.wav', normalize(y1(50:end-50), 'range', [-1, 1]), fs);
 audiowrite('enhanced_mvdr_src2_.wav', normalize(y2(50:end-50), 'range', [-1, 1]), fs);
 
-%% MVDR
-S_hat = mvdr_beamformer(X, R_n, A_hats);
-y = istft(S_hat, fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
-
-% Results
-p = play_scaled_sound(y, fs);
-audiowrite('enhanced_mvdr.wav', normalize(y, 'range', [-1, 1]), fs);
-figure;
-subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
-subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
-subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
-
-%% Multi Channel Wiener
-S_hat = mvdr_beamformer(X, R_n, A_hats);
-S_hat = single_channel_wiener(R_n, A_hats, R_s_hats, S_hat);
-y = istft(S_hat, fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
-Results
-p = play_scaled_sound(y, fs);
-audiowrite('enhanced_wiener.wav', normalize(y, 'range', [-1, 1]), fs);
-figure;
-subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
-subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
-subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
-
-%% MVDR - using Rx
-for k = 1:K
-    Rxk = squeeze(R_x(k,:,:));
-    ak = A_s(k,:).'; 
-    
-    % MVDR weights
-    w_mvdr = (Rxk \ ak) / (ak' / Rxk * ak); 
-    
-    for l = 1:L
-        x_k = squeeze(X(k,l,:));
-        S_hat(k,l) = w_mvdr' * x_k;
-    end
-end
-y = istft(S_hat, fs, 'Window', win, 'OverlapLength', overlap, 'FFTLength', nfft, 'ConjugateSymmetric', true);
-
-% Results
-p = play_scaled_sound(y, fs);
-audiowrite('enhanced_mvdr_rx.wav', normalize(y, 'range', [-1, 1]), fs);
-figure;
-subplot(3,1,1); spectrogram(s1, win, overlap, nfft, fs, 'yaxis'); title('Clean speech');
-subplot(3,1,2); spectrogram(x(:,1), win, overlap, nfft, fs, 'yaxis'); title('Noisy Mic 1');
-subplot(3,1,3); spectrogram(y, win, overlap, nfft, fs, 'yaxis'); title('Enhanced output');
